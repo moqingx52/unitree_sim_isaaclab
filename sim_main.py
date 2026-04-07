@@ -10,6 +10,7 @@ os.environ["PROJECT_ROOT"] = project_root
 
 import argparse
 import contextlib
+import re
 import time
 import sys
 import signal
@@ -74,6 +75,23 @@ parser.add_argument("--physx_substeps", type=int, default=None, help="physx subs
 parser.add_argument("--camera_include", type=str, default="front_camera,left_wrist_camera,right_wrist_camera", help="comma-separated camera names to enable")
 parser.add_argument("--camera_exclude", type=str, default="world_camera", help="comma-separated camera names to disable")
 
+parser.add_argument(
+    "--view_camera",
+    type=str,
+    default="free",
+    help=(
+        "GUI viewport active camera: 'free' keeps the default viewer camera. "
+        "Otherwise use a scene cfg attribute with a CameraCfg prim_path, e.g. "
+        "front_camera, left_wrist_camera, right_wrist_camera, robot_camera (wholebody tasks)."
+    ),
+)
+parser.add_argument(
+    "--view_env",
+    type=int,
+    default=0,
+    help="When using --view_camera, which env index to follow (env_0, env_1, ...).",
+)
+
 parser.add_argument("--env_reward_interval", type=int, default=5, help="environment reward compute interval (steps)")
 parser.add_argument("--seed", type=int, default=42, help="environment seed")
 # add AppLauncher parameters
@@ -114,6 +132,68 @@ from dds.sim_state_dds import *
 from action_provider.create_action_provider import create_action_provider
 from tools.get_stiffness import get_robot_stiffness_from_env
 from tools.get_reward import get_step_reward_value,get_current_rewards
+
+def _scene_camera_cfg_attr_names(scene_cfg):
+    """Names on scene cfg that look like CameraCfg entries (have prim_path with env replication)."""
+    names = []
+    try:
+        from dataclasses import fields
+
+        for f in fields(scene_cfg):
+            obj = getattr(scene_cfg, f.name, None)
+            p = getattr(obj, "prim_path", None) if obj is not None else None
+            if isinstance(p, str) and "env_" in p:
+                names.append(f.name)
+    except Exception:
+        for key in dir(scene_cfg):
+            if key.startswith("_"):
+                continue
+            try:
+                obj = getattr(scene_cfg, key)
+            except Exception:
+                continue
+            p = getattr(obj, "prim_path", None) if obj is not None else None
+            if isinstance(p, str) and "env_" in p:
+                names.append(key)
+    return sorted(set(names))
+
+
+def switch_viewport_camera(env_cfg, camera_name: str, env_index: int, *, headless: bool, no_render: bool) -> None:
+    """Point the Kit viewport at a scene camera prim; default viewer is unchanged when name is free."""
+    if headless or no_render:
+        return
+    raw = (camera_name or "").strip()
+    if not raw or raw.lower() in ("free", "default", "none"):
+        return
+    try:
+        from omni.kit.viewport.utility import get_active_viewport
+    except Exception as e:
+        print(f"[view] viewport API unavailable: {e}")
+        return
+    viewport = get_active_viewport()
+    if viewport is None:
+        print("[view] No active viewport (e.g. --headless has no GUI viewport).")
+        return
+    cam_cfg = getattr(env_cfg.scene, raw, None)
+    if cam_cfg is None:
+        known = _scene_camera_cfg_attr_names(env_cfg.scene)
+        print(f"[view] scene has no camera cfg attribute {raw!r}. Known camera-like attrs: {known}")
+        return
+    prim_path = getattr(cam_cfg, "prim_path", None)
+    if not isinstance(prim_path, str) or not prim_path.strip():
+        print(f"[view] {raw!r} has no usable prim_path")
+        return
+    num_envs = int(getattr(env_cfg.scene, "num_envs", 1))
+    if env_index < 0 or env_index >= num_envs:
+        print(f"[view] --view_env {env_index} out of range for num_envs={num_envs} (valid: 0..{num_envs - 1})")
+        return
+    resolved = re.sub(r"env_\.\*", f"env_{env_index}", prim_path)
+    try:
+        viewport.camera_path = resolved
+        print(f"[view] viewport camera -> {resolved}")
+    except Exception as e:
+        print(f"[view] failed to set viewport.camera_path: {e}")
+
 
 def setup_signal_handlers(controller,dds_manager=None,image_server=None):
     """set signal handlers"""
@@ -358,7 +438,14 @@ def main():
         )
     env.sim.reset()
     env.reset()
-    
+    switch_viewport_camera(
+        env_cfg,
+        args_cli.view_camera,
+        args_cli.view_env,
+        headless=bool(getattr(args_cli, "headless", False)),
+        no_render=bool(args_cli.no_render),
+    )
+
     # create simplified control configuration
     try:    
         control_config = ControlConfig(

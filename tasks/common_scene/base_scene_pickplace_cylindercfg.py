@@ -26,73 +26,17 @@ class TableCylinderSceneCfg(InteractiveSceneCfg): # inherit from the interactive
             rot=[1.0, 0.0, 0.0, 0.0]
         ),
         spawn=UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Simple_Warehouse/warehouse.usd",  # use simple room model
+            usd_path=f"/home/gsy/work/unitree_sim_isaaclab/assets/objects/USD3_26/scene.usd",  # use simple room model
         ),
     )
     # print(f"ISAAC_NUCLEUS_DIR: {ISAAC_NUCLEUS_DIR}")
     #ISAAC_NUCLEUS_DIR: http://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac
-        # 1. table configuration
-    packing_table = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/PackingTable",    # table in the scene
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.0, 0.55, -0.2],   # initial position [x, y, z]
-                                                rot=[1.0, 0.0, 0.0, 0.0]), # initial rotation [x, y, z, w]
-        spawn=UsdFileCfg(
-            # usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/PackingTable/packing_table.usd",    # table model file
-            usd_path=f"{project_root}/assets/objects/PackingTable/PackingTable.usd",    # table model file
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),    # set to kinematic object
-        ),
-    )
-
-    packing_table_2 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/PackingTable_2",   
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[-3.5, 0.55, -0.2],  
-                                                rot=[1.0, 0.0, 0.0, 0.0]), 
-        spawn=UsdFileCfg(
-            usd_path=f"{project_root}/assets/objects/PackingTable/PackingTable.usd",    # table model file
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),   
-        ),
-    )
-    packing_table_3 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/PackingTable_3",   
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[3.5, 0.55, -0.2],  
-                                                rot=[1.0, 0.0, 0.0, 0.0]), 
-        spawn=UsdFileCfg(
-            usd_path=f"{project_root}/assets/objects/PackingTable/PackingTable.usd",    # table model file
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),   
-        ),
-    )
-    packing_table_4 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/PackingTable_4",   
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[3.5, -5, -0.2],  
-                                                rot=[1.0, 0.0, 0.0, 0.0]), 
-        spawn=UsdFileCfg(
-            usd_path=f"{project_root}/assets/objects/PackingTable/PackingTable.usd",    # table model file
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),   
-        ),
-    )
-    packing_table_5 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/PackingTable_5",   
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[-3.5, -5, -0.2],  
-                                                rot=[1.0, 0.0, 0.0, 0.0]), 
-        spawn=UsdFileCfg(
-            usd_path=f"{project_root}/assets/objects/PackingTable/PackingTable.usd",    # table model file
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),   
-        ),
-    )
-    packing_table_6 = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/PackingTable_6",   
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.0, -5, -0.2],  
-                                                rot=[1.0, 0.0, 0.0, 0.0]), 
-        spawn=UsdFileCfg(
-            usd_path=f"{project_root}/assets/objects/PackingTable/PackingTable.usd",    # table model file
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),   
-        ),
-    )
+    # （原 packing_table ~ packing_table_6 已移除：场景中不再加载桌子）
     # Object
     # 2. object configuration (cylinder)     
     object = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Object",    # object in the scene
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.35, 0.40, 0.84], # initial position (pos) 
+        init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.35, 0.40, 0.175], # 地面放置：圆柱高 0.35，质心 z=半高（无桌子时） 
                                                   rot=[1, 0, 0, 0]), # initial rotation (rot)
         spawn=sim_utils.CylinderCfg(
             radius=0.018,    # cylinder radius (radius)

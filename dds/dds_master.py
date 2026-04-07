@@ -1,5 +1,6 @@
 # Copyright (c) 2025, Unitree Robotics Co., Ltd. All Rights Reserved.
 # License: Apache License, Version 2.0
+import os
 import time
 import threading
 from typing import Dict, List, Optional
@@ -57,9 +58,18 @@ class DDSManager:
             return True
         
         try:
-            ChannelFactoryInitialize(1)
+            # 与 xr_teleoperate --network-interface 对齐：显式 Cyclone 网卡，避免多网卡时与 teleop 不在同一发现域
+            _iface = (
+                os.environ.get("UNITREE_DDS_NETWORK_INTERFACE")
+                or os.environ.get("UNITREE_SIM_DDS_INTERFACE")
+            )
+            if _iface:
+                ChannelFactoryInitialize(1, networkInterface=_iface)
+                print(f"[DDSManager] DDS system initialized (networkInterface={_iface!r})")
+            else:
+                ChannelFactoryInitialize(1)
+                print("[DDSManager] DDS system initialized (default network interface)")
             self.dds_initialized = True
-            print("[DDSManager] DDS system initialized")
             return True
         except Exception as e:
             print(f"[DDSManager] DDS system initialization failed: {e}")
