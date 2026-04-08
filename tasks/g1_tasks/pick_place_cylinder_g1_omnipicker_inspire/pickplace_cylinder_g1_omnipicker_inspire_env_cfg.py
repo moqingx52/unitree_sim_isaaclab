@@ -13,7 +13,6 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.utils import configclass
 
 from robots.g1_omnipicker_cfg import G1_OMNIPICKER_CFG, replace_usd_path, with_root_z
-from tasks.common_config import CameraPresets
 from tasks.common_event.event_manager import SimpleEvent, SimpleEventManager
 from tasks.common_scene.base_scene_pickplace_cylindercfg import TableCylinderSceneCfg
 
@@ -30,11 +29,6 @@ class ObjectTableSceneCfg(TableCylinderSceneCfg):
         0.0,
     )
 
-    front_camera = CameraPresets.g1_front_camera()
-    left_wrist_camera = CameraPresets.left_inspire_wrist_camera()
-    right_wrist_camera = CameraPresets.right_inspire_wrist_camera()
-
-
 @configclass
 class ActionsCfg:
     joint_pos = mdp.JointPositionActionCfg(asset_name="robot", joint_names=[".*"], scale=1.0, use_default_offset=True)
@@ -45,7 +39,6 @@ class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
         robot_joint_state = ObsTerm(func=mdp.get_robot_boy_joint_states)
-        camera_image = ObsTerm(func=mdp.get_camera_image)
 
         def __post_init__(self):
             self.enable_corruption = False
