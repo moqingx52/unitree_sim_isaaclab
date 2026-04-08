@@ -24,7 +24,8 @@ class SharedMemoryManager:
                 self.shm_name = name
                 self.created = False
             except FileNotFoundError:
-                self.shm = shared_memory.SharedMemory(create=True, size=size)
+                # 必须带 name 创建，否则会得到 psm_* 匿名段，teleop 侧无法按 isaac_robot_state 等名字附加
+                self.shm = shared_memory.SharedMemory(create=True, size=size, name=name)
                 self.shm_name = self.shm.name
                 self.created = True
         else:

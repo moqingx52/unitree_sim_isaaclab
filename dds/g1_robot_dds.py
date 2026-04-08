@@ -5,8 +5,11 @@ G1 robot DDS communication class
 Handle the state publishing and command receiving of the G1 robot
 """
 
+import sys
 import numpy as np
 from typing import Any, Dict, Optional
+
+import unitree_sdk2py
 # from dds.dds_base import BaseDDSNode, node_manager
 from dds.dds_base import DDSObject
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
@@ -33,6 +36,7 @@ class G1RobotDDS(DDSObject):
         self.node_name = node_name
         self.crc = CRC()
         self.low_state = unitree_hg_msg_dds__LowState_()
+        self._dds_pub_tick_count = 0
         self._initialized = True
         
         # setup the shared memory
@@ -51,6 +55,11 @@ class G1RobotDDS(DDSObject):
             self.publisher = ChannelPublisher("rt/lowstate", LowState_)
             self.publisher.Init()
             print(f"[{self.node_name}] State publisher initialized (rt/lowstate)")
+            print(f"[{self.node_name}] runtime: python={sys.executable}")
+            print(f"[{self.node_name}] runtime: unitree_sdk2py={unitree_sdk2py.__file__}")
+            print(
+                f"[{self.node_name}] runtime: LowState_ module={LowState_.__module__} LowState_={LowState_}"
+            )
             return True
         except Exception as e:
             print(f"g1_robot_dds [{self.node_name}] State publisher initialization failed: {e}")    
@@ -71,18 +80,28 @@ class G1RobotDDS(DDSObject):
     
     def dds_publisher(self) -> Any:
         """Convert Isaac Lab state to DDS message and publish."""
+        self._dds_pub_tick_count += 1
+        n = self._dds_pub_tick_count
+        # 临时诊断：前 5 次 + 每 200 次打印，避免刷屏
+        diag = n <= 5 or (n % 200 == 0)
         try:
+            if diag:
+                print(f"[g1_robot] dds_publisher tick n={n}")
+
             data = self.input_shm.read_data()
             if data is None:
+                if n <= 20 or (n % 200 == 0):
+                    print(f"[g1_robot] dds_publisher: input_shm read_data() is None (n={n}), no Write()")
                 return
 
             motor_state = self.low_state.motor_state
             imu_state = self.low_state.imu_state
-            num_motors =len(motor_state)
+            num_motors = len(motor_state)
 
             positions = data.get("joint_positions")
             velocities = data.get("joint_velocities")
             torques = data.get("joint_torques")
+            filled_motor = bool(positions and velocities and torques)
 
             if positions and velocities and torques:
                 q_array = np.asarray(positions, dtype=np.float32)
@@ -95,6 +114,7 @@ class G1RobotDDS(DDSObject):
                     motor.tau_est = tau_array[i]
 
             imu = data.get("imu_data")
+            has_imu = bool(imu and len(imu) >= 13)
             if imu and len(imu) >= 13:
                 imu_array = np.asarray(imu, dtype=np.float32)
 
@@ -104,12 +124,26 @@ class G1RobotDDS(DDSObject):
 
                 imu_state.gyroscope[:] = imu_array[10:13]
 
+            if diag:
+                n_j = len(positions) if positions else 0
+                q0 = (
+                    f"{float(np.asarray(positions, dtype=np.float32)[0]):.4f},"
+                    f"{float(np.asarray(positions, dtype=np.float32)[1]):.4f},"
+                    f"{float(np.asarray(positions, dtype=np.float32)[2]):.4f}"
+                ) if positions and len(positions) >= 3 else "(no q sample)"
+                print(
+                    f"[g1_robot] shm ok: num_motors={num_motors} n_joints={n_j} "
+                    f"filled_motor={filled_motor} imu_ok={has_imu} q[:3]={q0}"
+                )
+
             self.low_state.tick += 1
             self.low_state.crc = self.crc.Crc(self.low_state)
             self.publisher.Write(self.low_state)
+            if diag:
+                print(f"[g1_robot] write lowstate ok tick={self.low_state.tick}")
 
         except Exception as e:
-            print(f"g1_robot_dds [{self.node_name}] Error processing publish data: {e}")
+            print(f"[g1_robot] write lowstate failed: {e} ({self.node_name})")
 
     
     def dds_subscriber(self, msg: LowCmd_,datatype:str=None) -> Dict[str, Any]:
