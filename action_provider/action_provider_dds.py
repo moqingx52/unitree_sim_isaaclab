@@ -13,6 +13,7 @@ class DDSActionProvider(ActionProvider):
         self.enable_gripper = args_cli.enable_dex1_dds
         self.enable_dex3 = args_cli.enable_dex3_dds
         self.enable_inspire = args_cli.enable_inspire_dds
+        self.demo_stand_only = getattr(args_cli, "demo_stand_only", False)
         self.env = env
         # Initialize DDS communication
         self.robot_dds = None
@@ -181,6 +182,10 @@ class DDSActionProvider(ActionProvider):
             self._inspire_special_scales_t = self._inspire_special_scales.to(device)
         
         self._full_action_buf = torch.zeros(len(self.all_joint_names), device=device, dtype=torch.float32)
+        stand_q = self.env.scene["robot"].data.default_joint_pos.clone()
+        if stand_q.ndim == 2:
+            stand_q = stand_q[0]
+        self._stand_action = stand_q.to(device=device, dtype=torch.float32).clone()
         self._positions_buf = torch.empty(29, device=device, dtype=torch.float32)
         if self.enable_gripper:
             self._gripper_buf = torch.empty(2, device=device, dtype=torch.float32)
@@ -195,8 +200,11 @@ class DDSActionProvider(ActionProvider):
         try:
 
             full_action = self._full_action_buf
-            full_action.zero_()
-            if self.enable_robot == "g129" and self.robot_dds:
+            if self.demo_stand_only:
+                full_action.copy_(self._stand_action)
+            else:
+                full_action.zero_()
+            if (not self.demo_stand_only) and self.enable_robot == "g129" and self.robot_dds:
                 cmd_data = self.robot_dds.get_robot_command()
                 if cmd_data and 'motor_cmd' in cmd_data:
                     positions = cmd_data['motor_cmd']['positions']
@@ -204,7 +212,7 @@ class DDSActionProvider(ActionProvider):
                         self._positions_buf[:29].copy_(torch.tensor(positions[:29], dtype=torch.float32, device=self.env.device))
                         arm_vals = self._positions_buf.index_select(0, self._arm_source_idx_t)
                         full_action.index_copy_(0, self._arm_target_idx_t, arm_vals)
-            elif self.enable_robot == "h1_2" and self.robot_dds:
+            elif (not self.demo_stand_only) and self.enable_robot == "h1_2" and self.robot_dds:
                 cmd_data = self.robot_dds.get_robot_command()
                 if cmd_data and 'motor_cmd' in cmd_data:
                     positions = cmd_data['motor_cmd']['positions']

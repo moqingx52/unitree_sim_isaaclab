@@ -54,6 +54,7 @@ parser.add_argument("--profile_interval", type=int, default=500, help="performan
 parser.add_argument("--model_path", type=str, default="assets/model/policy.onnx", help="model path")
 parser.add_argument("--reward_interval", type=int, default=10, help="step interval for reward calculation")
 parser.add_argument("--enable_wholebody_dds", action="store_true", default=False, help="enable wh dds")
+parser.add_argument("--demo_stand_only", action="store_true", default=False, help="use robot standing pose as base action and only overlay hand DDS")
 
 parser.add_argument("--physics_dt", type=float, default=None, help="physics time step, e.g., 0.005")
 parser.add_argument("--render_interval", type=int, default=None, help="render interval steps (>=1)")
@@ -468,7 +469,7 @@ def main():
         print("========= create image server success =========")
         print("========= create dds =========")
         try:
-            reset_pose_dds,sim_state_dds,dds_manager = create_dds_objects(args_cli,env)
+            reset_pose_dds,sim_state_dds,demo_pose_dds,dds_manager = create_dds_objects(args_cli,env)
         except Exception as e:
             print(f"Failed to create dds: {e}")
             return
@@ -620,6 +621,30 @@ def main():
                     recent_loop_times.pop(0)
                 
                 # execute control step (in main thread, support rendering)
+                if not args_cli.replay_data:
+                    pose_cmd = demo_pose_dds.get_pose_command()
+                    if pose_cmd is not None and int(pose_cmd.get("apply", 0)) == 1:
+                        try:
+                            root_pose_data = pose_cmd.get("root_pose", [])
+                            if isinstance(root_pose_data, list) and len(root_pose_data) == 7:
+                                robot = env.scene["robot"]
+                                root_pose = torch.tensor([root_pose_data], dtype=torch.float32, device=env.device)
+                                joint_pos = robot.data.default_joint_pos.clone()
+                                joint_vel = robot.data.default_joint_vel.clone()
+                                if joint_pos.ndim == 1:
+                                    joint_pos = joint_pos.unsqueeze(0)
+                                if joint_vel.ndim == 1:
+                                    joint_vel = joint_vel.unsqueeze(0)
+                                robot.write_root_pose_to_sim(root_pose)
+                                robot.write_root_velocity_to_sim(torch.zeros((1, 6), dtype=torch.float32, device=env.device))
+                                robot.write_joint_state_to_sim(joint_pos, joint_vel)
+                                robot.reset()
+                                demo_pose_dds.clear()
+                                print(f"[demo_pose] applied root_pose={root_pose_data}")
+                            else:
+                                print(f"[demo_pose] invalid root_pose: {root_pose_data}")
+                        except Exception as e:
+                            print(f"[demo_pose] Failed to apply demo pose command: {e}")
                 controller.step()
 
                 # print statistics and loop frequency periodically
