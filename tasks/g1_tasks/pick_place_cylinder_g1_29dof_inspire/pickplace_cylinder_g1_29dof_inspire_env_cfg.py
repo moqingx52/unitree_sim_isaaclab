@@ -92,6 +92,11 @@ class TerminationsCfg:
     success = DoneTerm(func=mdp.reset_object_estimate)# use task completion check function
 
 @configclass
+class TerminationsNoResetCfg:
+    """Disable auto-termination to avoid implicit object resets."""
+    pass
+
+@configclass
 class RewardsCfg:
     reward = RewTerm(func=mdp.compute_reward,weight=1.0)
 
@@ -166,3 +171,10 @@ class PickPlaceG129InspireBaseFixEnvCfg(ManagerBasedRLEnvCfg):
                 env,
                 torch.arange(env.num_envs, device=env.device))
         ))
+
+
+@configclass
+class PickPlaceG129InspireBaseFixNoResetEnvCfg(PickPlaceG129InspireBaseFixEnvCfg):
+    """Variant of the pick-place task without episode auto-reset from object checks."""
+
+    terminations: TerminationsNoResetCfg = TerminationsNoResetCfg()
