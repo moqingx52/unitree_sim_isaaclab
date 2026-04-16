@@ -4,6 +4,7 @@ import os
 import isaaclab.sim as sim_utils
 import isaaclab.envs.mdp as base_mdp
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -19,6 +20,101 @@ from tasks.common_scene.base_scene_pickplace_cylindercfg import TableCylinderSce
 from tasks.g1_tasks.pick_place_cylinder_g1_29dof_inspire import mdp
 
 project_root = os.environ.get("PROJECT_ROOT")
+MICROWAVE_USD_PATH = f"{project_root}/assets/objects/microwave/7292/usd/7292.usd"
+MICROWAVE_INIT_POS = (-0.08, 0.80, 0.90)
+# Isaac Lab uses quaternions in (w, x, y, z). Rotate +90 deg about world x
+# so the microwave's top (+z) points toward the robot's back (-y).
+MICROWAVE_INIT_ROT = (0.7071, 0.7071, 0.0, 0.0)
+MICROWAVE_SCALE = (0.25, 0.25, 0.25)
+
+
+def _create_microwave_rigid_cfg() -> AssetBaseCfg:
+    print("[MicrowaveCfg] Using rigid fallback placement.")
+    return AssetBaseCfg(
+        prim_path="/World/envs/env_.*/Microwave",
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=MICROWAVE_INIT_POS,
+            rot=MICROWAVE_INIT_ROT,
+        ),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=MICROWAVE_USD_PATH,
+            # Keep corrective scale for unit mismatch.
+            scale=MICROWAVE_SCALE,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+        ),
+    )
+
+
+def _create_microwave_articulation_cfg(door_joint_names: list[str]) -> ArticulationCfg:
+    print(f"[MicrowaveCfg] Using articulated microwave with joints: {door_joint_names}")
+    return ArticulationCfg(
+        prim_path="/World/envs/env_.*/Microwave",
+        init_state=ArticulationCfg.InitialStateCfg(
+            pos=MICROWAVE_INIT_POS,
+            rot=MICROWAVE_INIT_ROT,
+            joint_pos={joint_name: 0.0 for joint_name in door_joint_names},
+        ),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=MICROWAVE_USD_PATH,
+            scale=MICROWAVE_SCALE,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=False,
+            ),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                enabled_self_collisions=False,
+                solver_position_iteration_count=4,
+                solver_velocity_iteration_count=1,
+            ),
+        ),
+        actuators={
+            "microwave_door": ImplicitActuatorCfg(
+                joint_names_expr=door_joint_names,
+                effort_limit_sim=50.0,
+                velocity_limit_sim=10.0,
+                stiffness=40.0,
+                damping=5.0,
+            ),
+        },
+    )
+
+
+def _build_microwave_cfg() -> AssetBaseCfg | ArticulationCfg:
+    # Try articulated loading first. If USD is missing articulation metadata/joints,
+    # print the reason and fallback to rigid placement automatically.
+    if not os.path.exists(MICROWAVE_USD_PATH):
+        print(f"[MicrowaveCfg] USD not found: {MICROWAVE_USD_PATH}")
+        return _create_microwave_rigid_cfg()
+
+    try:
+        from pxr import Usd, UsdPhysics
+    except Exception as exc:
+        print(f"[MicrowaveCfg] pxr unavailable ({exc}); fallback to rigid placement.")
+        return _create_microwave_rigid_cfg()
+
+    try:
+        stage = Usd.Stage.Open(MICROWAVE_USD_PATH)
+        if stage is None:
+            print("[MicrowaveCfg] Failed to open USD stage; fallback to rigid placement.")
+            return _create_microwave_rigid_cfg()
+
+        has_articulation_root = any(prim.HasAPI(UsdPhysics.ArticulationRootAPI) for prim in stage.Traverse())
+        revolute_joint_names: list[str] = []
+        for prim in stage.Traverse():
+            if prim.IsA(UsdPhysics.RevoluteJoint):
+                revolute_joint_names.append(prim.GetName())
+
+        if not has_articulation_root:
+            print("[MicrowaveCfg] USD has no ArticulationRootAPI; fallback to rigid placement.")
+            return _create_microwave_rigid_cfg()
+        if not revolute_joint_names:
+            print("[MicrowaveCfg] USD has no RevoluteJoint; fallback to rigid placement.")
+            return _create_microwave_rigid_cfg()
+
+        return _create_microwave_articulation_cfg(revolute_joint_names)
+    except Exception as exc:
+        print(f"[MicrowaveCfg] Articulation probe failed ({exc}); fallback to rigid placement.")
+        return _create_microwave_rigid_cfg()
 
 
 @configclass
@@ -28,19 +124,8 @@ class ObjectTableMicrowaveSceneCfg(TableCylinderSceneCfg):
     robot: ArticulationCfg = G1RobotPresets.g1_29dof_inspire_base_fix()
 
     # Place microwave next to the cylinder object on the main table.
-    microwave = AssetBaseCfg(
-        prim_path="/World/envs/env_.*/Microwave",
-        init_state=AssetBaseCfg.InitialStateCfg(
-            # Cylinder default is around [-0.35, 0.40, 0.84], so keep microwave nearby.
-            pos=[-0.08, 0.40, 0.90],
-            rot=[1.0, 0.0, 0.0, 0.0],
-        ),
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{project_root}/assets/objects/microwave/0a75472d927832f61bc099d823c4f512/instance.usd",
-            # Ensure root prim gets rigid body API so scene creation does not fail.
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-        ),
-    )
+    # Try articulation first; automatically fallback to rigid placement.
+    microwave = _build_microwave_cfg()
 
     front_camera = CameraPresets.g1_front_camera()
     left_wrist_camera = CameraPresets.left_inspire_wrist_camera()
